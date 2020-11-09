@@ -8,7 +8,9 @@ import (
 )
 
 const (
+	GH_TOKEN                = "GH_TOKEN"
 	GITHUB_TOKEN            = "GITHUB_TOKEN"
+	GH_ENTERPRISE_TOKEN     = "GH_ENTERPRISE_TOKEN"
 	GITHUB_ENTERPRISE_TOKEN = "GITHUB_ENTERPRISE_TOKEN"
 )
 
@@ -28,7 +30,8 @@ func (c *envConfig) Hosts() ([]string, error) {
 			hasDefault = true
 		}
 	}
-	if (err != nil || !hasDefault) && os.Getenv(GITHUB_TOKEN) != "" {
+	_, _, tokenPresent := OauthTokenFromEnv(ghinstance.Default())
+	if (err != nil || !hasDefault) && tokenPresent {
 		hosts = append([]string{ghinstance.Default()}, hosts...)
 		return hosts, nil
 	}
@@ -42,13 +45,8 @@ func (c *envConfig) Get(hostname, key string) (string, error) {
 
 func (c *envConfig) GetWithSource(hostname, key string) (string, string, error) {
 	if hostname != "" && key == "oauth_token" {
-		envName := GITHUB_TOKEN
-		if ghinstance.IsEnterprise(hostname) {
-			envName = GITHUB_ENTERPRISE_TOKEN
-		}
-
-		if value := os.Getenv(envName); value != "" {
-			return value, envName, nil
+		if value, name, ok := OauthTokenFromEnv(hostname); ok {
+			return value, name, nil
 		}
 	}
 
@@ -57,15 +55,28 @@ func (c *envConfig) GetWithSource(hostname, key string) (string, string, error) 
 
 func (c *envConfig) CheckWriteable(hostname, key string) error {
 	if hostname != "" && key == "oauth_token" {
-		envName := GITHUB_TOKEN
-		if ghinstance.IsEnterprise(hostname) {
-			envName = GITHUB_ENTERPRISE_TOKEN
-		}
-
-		if os.Getenv(envName) != "" {
-			return fmt.Errorf("read-only token in %s cannot be modified", envName)
+		if _, name, ok := OauthTokenFromEnv(hostname); ok {
+			return fmt.Errorf("read-only token in %s cannot be modified", name)
 		}
 	}
 
 	return c.Config.CheckWriteable(hostname, key)
+}
+
+func OauthTokenFromEnv(hostname string) (string, string, bool) {
+	if ghinstance.IsEnterprise(hostname) {
+		if token, ok := os.LookupEnv(GH_ENTERPRISE_TOKEN); ok {
+			return token, GH_ENTERPRISE_TOKEN, ok
+		}
+
+		token, ok := os.LookupEnv(GITHUB_ENTERPRISE_TOKEN)
+		return token, GITHUB_ENTERPRISE_TOKEN, ok
+	}
+
+	if token, ok := os.LookupEnv(GH_TOKEN); ok {
+		return token, GH_TOKEN, ok
+	}
+
+	token, ok := os.LookupEnv(GITHUB_TOKEN)
+	return token, GITHUB_TOKEN, ok
 }
